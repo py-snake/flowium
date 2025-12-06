@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  # Service 1: Stream Capture from YouTube
+  stream-capture:
+    build: ./services/stream-capture
+    container_name: flowium-stream-capture
+    volumes:
+      - ./volumes/frames:/shared/frames
+      - ./volumes/cookies:/cookies
+    environment:
+      - YOUTUBE_URL=${YOUTUBE_URL}
+      - PROXY_URL=${PROXY_URL:-}
+      - COOKIES_FILE=${COOKIES_FILE:-}
+      - FRAME_RATE=${FRAME_RATE:-5}
+      - OUTPUT_DIR=/shared/frames
+    restart: unless-stopped
+    networks:
+      - flowium-network
+
+  # Service 2: Image Preprocessing
+  preprocessing:
+    build: ./services/preprocessing
+    container_name: flowium-preprocessing
+    volumes:
+      - ./volumes/frames:/shared/frames
+    environment:
+      - INPUT_DIR=/shared/frames
+      - PROCESSING_FPS=${PROCESSING_FPS:-5}
+      - CROP_X=${CROP_X:-560}
+      - CROP_Y=${CROP_Y:-340}
+      - CROP_WIDTH=${CROP_WIDTH:-800}
+      - CROP_HEIGHT=${CROP_HEIGHT:-400}
+    ports:
+      - "8001:8000"
+    depends_on:
+      - stream-capture
+    restart: unless-stopped
+    networks:
+      - flowium-network
+
+  # Service 3: YOLO Vehicle Detection
+  yolo-detector:
+    build: ./services/yolo-detector
+    container_name: flowium-yolo-detector
+    volumes:
+      - ./volumes/frames:/shared/frames
+      - ./volumes/models:/models
+    environment:
+      - MODEL_PATH=/models/yolov8n.pt
+      - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.5}
+      - DATA_MANAGER_URL=http://data-manager:8000
+      - PROCESSING_FPS=${PROCESSING_FPS:-5}
+    ports:
+      - "8002:8000"
+    depends_on:
+      - preprocessing
+      - data-manager
+    restart: unless-stopped
+    networks:
+      - flowium-network
+
+  # Service 4: Data Manager (SQLite + FastAPI)
+  data-manager:
+    build: ./services/data-manager
+    container_name: flowium-data-manager
+    volumes:
+      - ./volumes/db-data:/data
+    environment:
+      - DATABASE_PATH=/data/flowium.db
+    ports:
+      - "8003:8000"
+    restart: unless-stopped
+    networks:
+      - flowium-network
+
+  # Service 5: Online Learning with River
+  online-learner:
+    build: ./services/online-learner
+    container_name: flowium-online-learner
+    volumes:
+      - ./volumes/models:/models
+    environment:
+      - DATA_MANAGER_URL=http://data-manager:8000
+      - MODEL_PATH=/models/river_model.pkl
+    ports:
+      - "8004:8000"
+    depends_on:
+      - data-manager
+    restart: unless-stopped
+    networks:
+      - flowium-network
+
+  # Service 6: Weather Data Service
+  weather-service:
+    build: ./services/weather-service
+    container_name: flowium-weather-service
+    environment:
+      - LOCATION=${LOCATION:-Baja,HU}
+      - LATITUDE=${LATITUDE:-46.18}
+      - LONGITUDE=${LONGITUDE:-18.95}
+      - WEATHER_FETCH_INTERVAL=${WEATHER_FETCH_INTERVAL:-600}
+      - DATA_MANAGER_URL=http://data-manager:8000
+    ports:
+      - "8005:8000"
+    depends_on:
+      - data-manager
+    restart: unless-stopped
+    networks:
+      - flowium-network
+
+  # Service 7: Streamlit Web UI
+  web-ui:
+    build: ./services/web-ui
+    container_name: flowium-web-ui
+    environment:
+      - DATA_MANAGER_URL=http://data-manager:8000
+      - YOLO_DETECTOR_URL=http://yolo-detector:8000
+      - ONLINE_LEARNER_URL=http://online-learner:8000
+      - WEATHER_SERVICE_URL=http://weather-service:8000
+      - PREPROCESSING_URL=http://preprocessing:8000
+      - STREAMLIT_APP=${STREAMLIT_APP:-app_simple.py}
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    ports:
+      - "8501:8501"
+    depends_on:
+      - preprocessing
+    restart: unless-stopped
+    networks:
+      - flowium-network
+
+networks:
+  flowium-network:
+    driver: bridge
+
+volumes:
+  frames:
+  models:
+  db-data:

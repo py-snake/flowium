@@ -1,0 +1,71 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Docker volumes
+volumes/frames/*
+volumes/models/*
+volumes/db-data/*
+volumes/cookies/*
+!volumes/frames/.gitkeep
+!volumes/models/.gitkeep
+!volumes/db-data/.gitkeep
+!volumes/cookies/README.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Backups
+backups/
+*.bak
+
+# Model files (large)
+*.pt
+*.pth
+*.pkl
+*.h5
+*.onnx
