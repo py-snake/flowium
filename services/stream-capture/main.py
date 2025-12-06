@@ -47,7 +47,7 @@ def atomic_file_watcher(temp_path, final_path, stop_event):
     # but long enough to ensure write is done.
     stability_threshold = 0.10
 
-    print(f"📁 Starting atomic file watcher: {temp_path.name} -> {final_path.name}")
+    print(f"Starting atomic file watcher: {temp_path.name} -> {final_path.name}")
 
     while not stop_event.is_set():
         try:
@@ -78,7 +78,7 @@ def atomic_file_watcher(temp_path, final_path, stop_event):
                             # FFMPEG might have just started writing a new one, or we just moved it.
                             pass
                         except OSError as e:
-                            print(f"⚠️ Rename failed: {e}")
+                            print(f"Rename failed: {e}")
 
                 except FileNotFoundError:
                     # File disappeared (we likely just renamed it), wait for next frame
@@ -89,7 +89,7 @@ def atomic_file_watcher(temp_path, final_path, stop_event):
             print(f"Watcher error: {e}")
             time.sleep(1)
 
-    print(f"📁 Atomic file watcher stopped")
+    print(f"Atomic file watcher stopped")
 
 def get_fresh_stream_url():
     """Get a fresh stream URL from yt-dlp"""
@@ -100,7 +100,7 @@ def get_fresh_stream_url():
             cmd.extend(['--proxy', PROXY_URL])
         if COOKIES_FILE and Path(COOKIES_FILE).exists():
             cmd.extend(['--cookies', COOKIES_FILE])
-            print(f"🍪 Using cookies from: {COOKIES_FILE}")
+            print(f"Using cookies from: {COOKIES_FILE}")
         cmd.append(YOUTUBE_URL)
 
         result = subprocess.run(
@@ -111,7 +111,7 @@ def get_fresh_stream_url():
             timeout=30
         )
         stream_url = result.stdout.strip()
-        print(f"✓ Got fresh stream URL from yt-dlp (length: {len(stream_url)} chars)")
+        print(f"Got fresh stream URL from yt-dlp (length: {len(stream_url)} chars)")
         return stream_url
     except subprocess.TimeoutExpired:
         print("ERROR: yt-dlp timed out after 30 seconds")
@@ -138,7 +138,7 @@ def capture_stream():
         if Path(COOKIES_FILE).exists():
             print(f"Using cookies file: {COOKIES_FILE}")
         else:
-            print(f"⚠️ Cookies file specified but not found: {COOKIES_FILE}")
+            print(f"Cookies file specified but not found: {COOKIES_FILE}")
 
     # Use temp file for writing, watcher will atomically rename to latest.jpg
     temp_path = OUTPUT_DIR / 'latest_writing.jpg'
@@ -182,7 +182,7 @@ def capture_stream():
                 ffmpeg_cmd.insert(1, '-http_proxy')
                 ffmpeg_cmd.insert(2, PROXY_URL)
 
-            print(f"🎬 Starting ffmpeg capture...")
+            print(f"Starting ffmpeg capture...")
 
             process = None
             try:
@@ -205,7 +205,7 @@ def capture_stream():
                 while True:
                     # Check if process died
                     if process.poll() is not None:
-                        print(f"❌ ffmpeg died with exit code {process.returncode}")
+                        print(f"ffmpeg died with exit code {process.returncode}")
                         break
 
                     current_time = time.time()
@@ -218,19 +218,19 @@ def capture_stream():
                             if file_age <= 5:
                                 # Fresh frames
                                 if last_good_frame is None or current_time - last_good_frame > 30:
-                                    print(f"✓ Stream healthy (frame age: {file_age:.1f}s)")
+                                    print(f"Stream healthy (frame age: {file_age:.1f}s)")
                                 last_good_frame = current_time
                             elif file_age > STALE_THRESHOLD:
-                                print(f"⚠️ Frame is STALE ({file_age:.1f}s old) - restarting ffmpeg...")
+                                print(f"Frame is STALE ({file_age:.1f}s old) - restarting ffmpeg...")
                                 break # Break inner loop to restart ffmpeg
                         else:
-                            print("⏳ Waiting for first frame...")
+                            print("Waiting for first frame...")
 
                         last_check = current_time
 
                     # Automatic restart
                     if current_time - start_time > MAX_RUN_TIME:
-                        print(f"🔄 Auto-restart after {MAX_RUN_TIME}s...")
+                        print(f"Auto-restart after {MAX_RUN_TIME}s...")
                         break
 
                     time.sleep(1)
@@ -247,7 +247,7 @@ def capture_stream():
                         process.wait()
 
             # Wait a bit before inner loop restart (getting new URL)
-            print("⏳ Waiting 3 seconds before restart...")
+            print("Waiting 3 seconds before restart...")
             time.sleep(3)
 
     finally:

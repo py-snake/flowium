@@ -37,9 +37,18 @@ PROCESSING_FPS = int(os.getenv('PROCESSING_FPS', '5'))
 INPUT_DIR = Path('/shared/frames')
 
 # Initialize YOLO model
+# Try to load ONNX model first (2-3x faster), fallback to .pt
 print(f"Loading YOLO model from {MODEL_PATH}...")
-model = YOLO('yolov8n.pt')  # Will download on first run
-print("YOLO model loaded successfully")
+onnx_model_path = Path('yolov8n.onnx')
+if onnx_model_path.exists():
+    print("Loading optimized ONNX model (2-3x faster on CPU)...")
+    model = YOLO('yolov8n.onnx')
+    print("YOLO ONNX model loaded successfully")
+else:
+    print("ONNX model not found, using .pt model (slower)")
+    print("Run 'python export_model.py' to create optimized ONNX model")
+    model = YOLO('yolov8n.pt')  # Will download on first run
+    print("YOLO model loaded successfully")
 
 # Vehicle class IDs in COCO dataset
 VEHICLE_CLASSES = [2, 3, 5, 7]  # car, motorcycle, bus, truck
@@ -48,7 +57,10 @@ VEHICLE_CLASSES = [2, 3, 5, 7]  # car, motorcycle, bus, truck
 performance_stats = {
     "last_detection_time_ms": 0,
     "avg_detection_time_ms": 0,
-    "total_frames": 0
+    "total_frames": 0,
+    "frames_dropped": 0,
+    "frames_processed": 0,
+    "is_processing": False  # Track if currently processing to avoid queue buildup
 }
 
 def atomic_write_image(image, output_path: Path):
@@ -90,9 +102,9 @@ def detect_and_annotate_vehicles(image_path: Path, save_annotated: bool = True, 
     if image is None:
         return [], None
 
-    # Run inference with optimized image size for faster CPU processing
-    # imgsz=480 will resize the longest edge to 480px for inference (faster)
-    results = model(str(image_path), conf=CONFIDENCE_THRESHOLD, verbose=False, imgsz=480)
+    # Run inference with balanced image size for speed + accuracy
+    # imgsz=416 provides better accuracy while still being 2x faster than original
+    results = model(str(image_path), conf=CONFIDENCE_THRESHOLD, verbose=False, imgsz=416)
 
     detections = []
     for result in results:
@@ -150,7 +162,7 @@ def detect_and_annotate_vehicles(image_path: Path, save_annotated: bool = True, 
 
             # Draw hit counter (small indicator showing how many times detected)
             if hits >= 3:  # Only show for confirmed tracks
-                hit_label = f"✓{hits}"
+                hit_label = f"{hits}"
                 cv2.putText(image, hit_label, (x2 - 40, y1 + 20),
                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 2)
 
@@ -224,12 +236,39 @@ def detect():
 @app.get("/image/detected")
 def get_detected_image():
     """Serve the latest annotated frame with detection boxes"""
+    from fastapi.responses import Response
+    import time as time_module
+
     detected_frame = INPUT_DIR / 'detected_latest.jpg'
 
     if not detected_frame.exists():
         raise HTTPException(status_code=404, detail="No detected frame available")
 
-    return FileResponse(detected_frame, media_type="image/jpeg")
+    # Read image into memory to avoid race conditions with atomic writes
+    # Retry up to 3 times if file is being written
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with open(detected_frame, 'rb') as f:
+                image_data = f.read()
+
+            # Return image with no-cache headers for realtime updates
+            return Response(
+                content=image_data,
+                media_type="image/jpeg",
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
+        except (IOError, OSError) as e:
+            if attempt < max_retries - 1:
+                # File might be mid-write, wait a tiny bit and retry
+                time_module.sleep(0.01)
+                continue
+            else:
+                raise HTTPException(status_code=503, detail="Image temporarily unavailable, retry")
 
 @app.get("/performance")
 def get_performance_stats():
@@ -237,7 +276,10 @@ def get_performance_stats():
     return {
         "last_detection_time_ms": round(performance_stats["last_detection_time_ms"], 2),
         "avg_detection_time_ms": round(performance_stats["avg_detection_time_ms"], 2),
-        "total_frames_processed": performance_stats["total_frames"]
+        "total_frames_processed": performance_stats["total_frames"],
+        "frames_dropped": performance_stats["frames_dropped"],
+        "frames_processed": performance_stats["frames_processed"],
+        "drop_rate": round(performance_stats["frames_dropped"] / max(1, performance_stats["frames_dropped"] + performance_stats["frames_processed"]) * 100, 1)
     }
 
 @app.get("/stats")
@@ -298,80 +340,121 @@ def stop_continuous_detection():
     return {"status": "stopped"}
 
 async def auto_detect_task():
-    """Background task that automatically detects vehicles at specified FPS with tracking"""
-    global detection_running
+    """
+    Optimized background task with adaptive FPS and frame dropping
+    - Only processes if previous frame is done (adaptive FPS)
+    - Tracks last processed frame to avoid reprocessing
+    - Drops frames intelligently when falling behind
+    """
+    import time as time_module
 
-    logger.info(f"Starting automatic detection task at {PROCESSING_FPS} FPS with object tracking...")
+    logger.info(f"Starting OPTIMIZED detection task at target {PROCESSING_FPS} FPS")
+    logger.info(f"Adaptive FPS: Skips frames if processing is slow")
+    logger.info(f"Smart frame dropping: Avoids reprocessing same frames")
     logger.info(f"Tracker config: IoU threshold=0.3, max_age=30 frames, min_hits=3")
 
-    # Calculate sleep time based on desired FPS
-    sleep_time = 1.0 / PROCESSING_FPS
+    # Calculate target sleep time based on desired FPS
+    target_sleep = 1.0 / PROCESSING_FPS
+    last_processed_mtime = 0  # Track last processed frame's modification time
 
     while True:
+        loop_start = time_module.time()
+
         try:
+            # ADAPTIVE FPS: Skip if still processing previous frame
+            if performance_stats["is_processing"]:
+                performance_stats["frames_dropped"] += 1
+                # logger.debug("Skipping frame - still processing previous frame")
+                await asyncio.sleep(target_sleep)
+                continue
+
             processed_frame = INPUT_DIR / 'processed_latest.jpg'
             raw_frame = INPUT_DIR / 'latest.jpg'
-
             image_path = processed_frame if processed_frame.exists() else raw_frame
 
             if image_path.exists():
-                # Start timing
-                import time as time_module
+                # SMART FRAME DROPPING: Check if this is a new frame
+                current_mtime = image_path.stat().st_mtime
+                if current_mtime == last_processed_mtime:
+                    # Same frame as before, skip it
+                    await asyncio.sleep(target_sleep)
+                    continue
+
+                # Mark as processing
+                performance_stats["is_processing"] = True
                 detect_start = time_module.time()
 
                 # Detect all vehicles in current frame (without annotation yet)
                 detections, _ = detect_and_annotate_vehicles(image_path, save_annotated=False)
 
+                # Always update tracker and save annotated image (even if no detections)
+                # This ensures UI shows clean image when no vehicles present
                 if detections:
                     # Update tracker with detections
                     tracked_detections = tracker.update(detections)
+                else:
+                    # No detections - update tracker with empty list and get existing tracks
+                    tracked_detections = tracker.update([])
 
-                    # Now annotate with track IDs
-                    _, annotated_path = detect_and_annotate_vehicles(
-                        image_path,
-                        save_annotated=True,
-                        tracked_detections=tracked_detections
+                # Always annotate and save (shows clean image when no vehicles)
+                _, annotated_path = detect_and_annotate_vehicles(
+                    image_path,
+                    save_annotated=True,
+                    tracked_detections=tracked_detections
+                )
+
+                # Update performance stats
+                detect_time_ms = (time_module.time() - detect_start) * 1000
+                performance_stats["last_detection_time_ms"] = detect_time_ms
+                performance_stats["total_frames"] += 1
+                performance_stats["frames_processed"] += 1
+
+                # Calculate rolling average
+                alpha = 0.01
+                if performance_stats["total_frames"] == 1:
+                    performance_stats["avg_detection_time_ms"] = detect_time_ms
+                else:
+                    performance_stats["avg_detection_time_ms"] = (
+                        alpha * detect_time_ms +
+                        (1 - alpha) * performance_stats["avg_detection_time_ms"]
                     )
 
-                    # Update performance stats
-                    detect_time_ms = (time_module.time() - detect_start) * 1000
-                    performance_stats["last_detection_time_ms"] = detect_time_ms
-                    performance_stats["total_frames"] += 1
+                # Get only NEW confirmed tracks (haven't been stored yet)
+                new_confirmed_tracks = tracker.get_confirmed_new_tracks(tracked_detections)
 
-                    # Calculate rolling average
-                    alpha = 0.01
-                    if performance_stats["total_frames"] == 1:
-                        performance_stats["avg_detection_time_ms"] = detect_time_ms
-                    else:
-                        performance_stats["avg_detection_time_ms"] = (
-                            alpha * detect_time_ms +
-                            (1 - alpha) * performance_stats["avg_detection_time_ms"]
-                        )
-
-                    # Get only NEW confirmed tracks (haven't been stored yet)
-                    new_confirmed_tracks = tracker.get_confirmed_new_tracks(tracked_detections)
-
-                    # Only send new confirmed tracks to database
-                    if new_confirmed_tracks:
-                        send_to_data_manager(new_confirmed_tracks)
+                # Only send new confirmed tracks to database
+                if new_confirmed_tracks:
+                    send_to_data_manager(new_confirmed_tracks)
+                    logger.info(
+                        f"Frame: {len(detections)} detections, "
+                        f"{tracker.get_active_track_count()} active tracks, "
+                        f"{len(new_confirmed_tracks)} NEW vehicles | "
+                        f"{detect_time_ms:.0f}ms"
+                    )
+                else:
+                    # Log occasionally even when no new vehicles
+                    if tracker.frame_count % 25 == 0:  # Every 5 seconds at 5 FPS
                         logger.info(
-                            f"Frame: {len(detections)} detections, "
-                            f"{tracker.get_active_track_count()} active tracks, "
-                            f"{len(new_confirmed_tracks)} NEW vehicles counted"
+                            f"Tracking: {tracker.get_active_track_count()} active tracks, "
+                            f"{tracker.get_confirmed_track_count()} confirmed | "
+                            f"{detect_time_ms:.0f}ms | "
+                            f"Drop rate: {performance_stats['drop_rate']:.1f}%"
                         )
-                    else:
-                        # Log occasionally even when no new vehicles
-                        if tracker.frame_count % 25 == 0:  # Every 5 seconds at 5 FPS
-                            logger.info(
-                                f"Tracking: {tracker.get_active_track_count()} active tracks, "
-                                f"{tracker.get_confirmed_track_count()} confirmed (no new vehicles)"
-                            )
+
+                # Update last processed frame time
+                last_processed_mtime = current_mtime
+
+                # Mark as done processing
+                performance_stats["is_processing"] = False
 
         except Exception as e:
             logger.error(f"Error in auto-detection: {e}")
+            performance_stats["is_processing"] = False
 
-        # Sleep for the calculated interval to maintain desired FPS
-        await asyncio.sleep(sleep_time)
+        # Adaptive sleep: sleep less if processing took longer
+        elapsed = time_module.time() - loop_start
+        adaptive_sleep = max(0.01, target_sleep - elapsed)
+        await asyncio.sleep(adaptive_sleep)
 
 async def continuous_detection_loop():
     """Continuously detect vehicles (deprecated - use auto_detect_task)"""

@@ -6,18 +6,18 @@ set -e
 REMOTE_HOST="dockerserver"
 REMOTE_DIR="flowium"
 
-echo "🚀 Deploying Flowium to Remote Server"
+echo "Deploying Flowium to Remote Server"
 echo "======================================"
 echo ""
 
 # Check SSH connection
 echo "Testing SSH connection to ${REMOTE_HOST}..."
 if ! ssh -o ConnectTimeout=5 ${REMOTE_HOST} "echo 'Connected'" > /dev/null 2>&1; then
-    echo "❌ Cannot connect to ${REMOTE_HOST}"
+    echo "ERROR: Cannot connect to ${REMOTE_HOST}"
     echo "Please check your SSH configuration"
     exit 1
 fi
-echo "✅ SSH connection successful"
+echo "SSH connection successful"
 echo ""
 
 # Create archive
@@ -40,27 +40,27 @@ tar czf /tmp/flowium-deploy.tar.gz \
   scripts \
   volumes 2>/dev/null
 
-echo "✅ Archive created"
+echo "Archive created"
 echo ""
 
 # Copy to remote
 echo "Copying files to ${REMOTE_HOST}:${REMOTE_DIR}/..."
 scp /tmp/flowium-deploy.tar.gz ${REMOTE_HOST}:${REMOTE_DIR}/
 
-echo "✅ Files copied"
+echo "Files copied"
 echo ""
 
 # Extract on remote
 echo "Extracting files on remote server..."
 ssh ${REMOTE_HOST} "cd ${REMOTE_DIR} && tar xzf flowium-deploy.tar.gz && rm flowium-deploy.tar.gz"
 
-echo "✅ Files extracted"
+echo "Files extracted"
 echo ""
 
 # Clean up local archive
 rm /tmp/flowium-deploy.tar.gz
 
-echo "✅ Deployment complete!"
+echo "Deployment complete!"
 echo ""
 echo "Next steps:"
 echo "1. Configure .env on remote:"

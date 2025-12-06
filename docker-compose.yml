@@ -121,6 +121,10 @@ services:
       - PREPROCESSING_URL=http://preprocessing:8000
       - STREAMLIT_APP=${STREAMLIT_APP:-app_simple.py}
       - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - CROP_X=${CROP_X:-560}
+      - CROP_Y=${CROP_Y:-340}
+      - CROP_WIDTH=${CROP_WIDTH:-800}
+      - CROP_HEIGHT=${CROP_HEIGHT:-400}
     ports:
       - "8501:8501"
     depends_on:

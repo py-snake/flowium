@@ -12,11 +12,11 @@ from datetime import datetime
 def render_analytics_tab(DATA_MANAGER_URL):
     """Render the professional analytics dashboard"""
 
-    st.markdown("## 📊 Professional Traffic Analytics Dashboard")
+    st.markdown("## Professional Traffic Analytics Dashboard")
 
     # Sidebar controls
     st.sidebar.markdown("---")
-    st.sidebar.header("⚙️ Dashboard Controls")
+    st.sidebar.header("Dashboard Controls")
 
     time_range = st.sidebar.selectbox(
         "Time Range",
@@ -31,24 +31,24 @@ def render_analytics_tab(DATA_MANAGER_URL):
     try:
         health_response = requests.get(f"{DATA_MANAGER_URL}/health", timeout=2)
         if not health_response.ok:
-            st.error("❌ Data Manager service not available")
+            st.error("Data Manager service not available")
             return False
 
         health_data = health_response.json()
         total_detections = health_data.get('total_detections', 0)
 
         if total_detections == 0:
-            st.info("📊 No data collected yet. Start the stream and wait for data to accumulate.")
+            st.info("No data collected yet. Start the stream and wait for data to accumulate.")
             return False
 
     except Exception as e:
-        st.error(f"❌ Cannot connect to Data Manager: {e}")
+        st.error(f"Cannot connect to Data Manager: {e}")
         return False
 
     # ==========================================================================
     # TOP KPI METRICS
     # ==========================================================================
-    st.markdown("### 🎯 Key Performance Indicators")
+    st.markdown("### Key Performance Indicators")
 
     try:
         advanced_stats = requests.get(f"{DATA_MANAGER_URL}/stats/advanced?hours={time_range}", timeout=5).json()
@@ -58,14 +58,14 @@ def render_analytics_tab(DATA_MANAGER_URL):
 
         with col1:
             st.metric(
-                "📊 Total Detections",
+                "Total Detections",
                 f"{advanced_stats['total_detections']:,}",
                 delta=f"Last {time_range}h"
             )
 
         with col2:
             st.metric(
-                "🚦 Current Traffic",
+                "Current Traffic",
                 current_stats['total_vehicles'],
                 delta="Last 5 min",
                 delta_color="normal"
@@ -73,7 +73,7 @@ def render_analytics_tab(DATA_MANAGER_URL):
 
         with col3:
             st.metric(
-                "📈 Avg Confidence",
+                "Avg Confidence",
                 f"{advanced_stats['average_confidence']:.1%}",
                 delta="Quality score"
             )
@@ -83,17 +83,17 @@ def render_analytics_tab(DATA_MANAGER_URL):
             if busiest['timestamp']:
                 hour = datetime.fromisoformat(busiest['timestamp']).strftime('%H:%M')
                 st.metric(
-                    "⚡ Peak Traffic",
+                    "Peak Traffic",
                     busiest['count'],
                     delta=f"At {hour}"
                 )
             else:
-                st.metric("⚡ Peak Traffic", "N/A")
+                st.metric("Peak Traffic", "N/A")
 
         with col5:
             low_pct = advanced_stats['low_confidence_percentage']
             st.metric(
-                "⚠️ Low Quality",
+                "Low Quality",
                 f"{low_pct}%",
                 delta=f"{advanced_stats['low_confidence_count']} detections",
                 delta_color="inverse"
@@ -107,7 +107,7 @@ def render_analytics_tab(DATA_MANAGER_URL):
     # ==========================================================================
     # WEATHER CONDITIONS
     # ==========================================================================
-    st.markdown("### 🌤️ Current Weather Conditions")
+    st.markdown("### Current Weather Conditions")
 
     try:
         weather_response = requests.get(f"{DATA_MANAGER_URL}/weather/latest", timeout=2)
@@ -159,14 +159,14 @@ def render_analytics_tab(DATA_MANAGER_URL):
 
                 # Show last update time
                 last_update = datetime.fromisoformat(weather['timestamp'])
-                st.caption(f"📅 Last updated: {last_update.strftime('%Y-%m-%d %H:%M:%S')}")
+                st.caption(f"Last updated: {last_update.strftime('%Y-%m-%d %H:%M:%S')}")
             else:
                 st.info("No weather data available yet")
         else:
-            st.warning("⚠️ Weather data temporarily unavailable")
+            st.warning("Weather data temporarily unavailable")
 
     except Exception as e:
-        st.warning(f"⚠️ Could not load weather data: {e}")
+        st.warning(f"Could not load weather data: {e}")
 
     st.markdown("---")
 
@@ -176,7 +176,7 @@ def render_analytics_tab(DATA_MANAGER_URL):
     col_left, col_right = st.columns([2, 1])
 
     with col_left:
-        st.markdown("### 📈 Traffic Timeline")
+        st.markdown("### Traffic Timeline")
 
         try:
             timeline = requests.get(
@@ -214,13 +214,13 @@ def render_analytics_tab(DATA_MANAGER_URL):
                 # Statistics cards
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("📊 Total", f"{df_timeline['count'].sum():,}")
+                    st.metric("Total", f"{df_timeline['count'].sum():,}")
                 with col2:
-                    st.metric("📈 Average", f"{df_timeline['count'].mean():.1f}/h")
+                    st.metric("Average", f"{df_timeline['count'].mean():.1f}/h")
                 with col3:
-                    st.metric("🔝 Peak", f"{df_timeline['count'].max()}")
+                    st.metric("Peak", f"{df_timeline['count'].max()}")
                 with col4:
-                    st.metric("🔻 Min", f"{df_timeline['count'].min()}")
+                    st.metric("Min", f"{df_timeline['count'].min()}")
 
             else:
                 st.info(f"No timeline data for the last {time_range} hours")
@@ -229,7 +229,7 @@ def render_analytics_tab(DATA_MANAGER_URL):
             st.error(f"Error loading timeline: {e}")
 
     with col_right:
-        st.markdown("### 🚗 Vehicle Distribution")
+        st.markdown("### Vehicle Distribution")
 
         try:
             type_stats = requests.get(
@@ -264,7 +264,7 @@ def render_analytics_tab(DATA_MANAGER_URL):
                 for item in type_stats['breakdown']:
                     cols = st.columns([3, 1, 1])
                     with cols[0]:
-                        st.text(f"🚗 {item['vehicle_type']}")
+                        st.text(f"{item['vehicle_type']}")
                     with cols[1]:
                         st.text(f"{item['count']:,}")
                     with cols[2]:
@@ -279,38 +279,81 @@ def render_analytics_tab(DATA_MANAGER_URL):
     st.markdown("---")
 
     # ==========================================================================
+    # RECENT DETECTIONS (REALTIME)
+    # ==========================================================================
+    st.markdown("### Recent Detections (Last 10)")
+
+    try:
+        recent_response = requests.get(f"{DATA_MANAGER_URL}/detections?limit=10", timeout=2)
+        if recent_response.ok:
+            recent_data = recent_response.json()
+            detections = recent_data.get('detections', [])
+
+            if detections:
+                # Format for clean table display
+                display_data = []
+                for det in detections:
+                    timestamp = det.get('timestamp', '')
+                    try:
+                        ts = datetime.fromisoformat(timestamp)
+                        time_str = ts.strftime('%H:%M:%S')
+                        date_str = ts.strftime('%Y-%m-%d')
+                    except:
+                        time_str = timestamp
+                        date_str = ''
+
+                    display_data.append({
+                        'Time': time_str,
+                        'Date': date_str,
+                        'Vehicle': det.get('class_name', 'Unknown'),
+                        'Confidence': f"{det.get('confidence', 0):.2f}",
+                        'ID': det.get('id', '')
+                    })
+
+                df_recent = pd.DataFrame(display_data)
+                st.dataframe(df_recent, use_container_width=True, hide_index=True)
+            else:
+                st.info("No detections yet. Waiting for vehicles...")
+        else:
+            st.warning("Could not load recent detections")
+    except Exception as e:
+        st.error(f"Error loading recent detections: {e}")
+
+    st.markdown("---")
+
+    # ==========================================================================
     # DATA MANAGEMENT & EXPORT
     # ==========================================================================
-    st.markdown("### 🗄️ Data Management & Export")
+    st.markdown("### Data Management & Export")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("#### 📤 Export Data")
+        st.markdown("#### Export Data")
 
         export_hours = st.selectbox("Export timeframe", [1, 6, 12, 24, 48, 168], index=3)
 
-        if st.button("📥 Download CSV", use_container_width=True):
+        if st.button("Download CSV", use_container_width=True):
             try:
                 csv_url = f"{DATA_MANAGER_URL}/export/csv?hours={export_hours}"
-                st.markdown(f"[📥 Click here to download CSV]({csv_url})")
-                st.success(f"✅ Exporting data from last {export_hours} hours")
+                st.markdown(f"[Click here to download CSV]({csv_url})")
+                st.success(f"Exporting data from last {export_hours} hours")
             except Exception as e:
                 st.error(f"Export failed: {e}")
 
         st.markdown("---")
 
-        st.markdown("#### 💾 Database Info")
+        st.markdown("#### Database Info")
         st.info(f"**Total Records:** {total_detections:,}")
         st.info(f"**Storage:** Unlimited retention")
 
     with col2:
-        st.markdown("#### 🧹 Data Cleanup")
+        st.markdown("#### Data Cleanup")
 
-        st.warning("⚠️ **Warning:** These actions are irreversible!")
+        st.warning("**Warning:** These actions are irreversible!")
 
         # Clear by time range
-        with st.expander("🕐 Clear by Time Range"):
+        with st.expander("Clear by Time Range"):
             clear_hours = st.number_input("Hours to clear", min_value=1, max_value=168, value=1)
             if st.button(f"Delete last {clear_hours} hours", key="clear_time"):
                 try:
@@ -320,15 +363,15 @@ def render_analytics_tab(DATA_MANAGER_URL):
                     )
                     if response.ok:
                         result = response.json()
-                        st.success(f"✅ {result['message']}")
+                        st.success(f"{result['message']}")
                         st.rerun()
                     else:
-                        st.error("❌ Delete failed")
+                        st.error("Delete failed")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
         # Clear low confidence
-        with st.expander("📉 Clear Low Quality"):
+        with st.expander("Clear Low Quality"):
             confidence_threshold = st.slider(
                 "Confidence threshold",
                 min_value=0.0,
@@ -344,27 +387,27 @@ def render_analytics_tab(DATA_MANAGER_URL):
                     )
                     if response.ok:
                         result = response.json()
-                        st.success(f"✅ {result['message']}")
+                        st.success(f"{result['message']}")
                         st.rerun()
                     else:
-                        st.error("❌ Delete failed")
+                        st.error("Delete failed")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
         # Clear all
-        with st.expander("🗑️ Clear ALL Data"):
-            st.error("⛔ This will delete ALL detections permanently!")
+        with st.expander("Clear ALL Data"):
+            st.error("This will delete ALL detections permanently!")
             confirm = st.text_input("Type 'DELETE ALL' to confirm")
-            if st.button("🗑️ Delete Everything", key="clear_all", type="primary"):
+            if st.button("Delete Everything", key="clear_all", type="primary"):
                 if confirm == "DELETE ALL":
                     try:
                         response = requests.delete(f"{DATA_MANAGER_URL}/detections/all", timeout=5)
                         if response.ok:
                             result = response.json()
-                            st.success(f"✅ {result['message']}")
+                            st.success(f"{result['message']}")
                             st.rerun()
                         else:
-                            st.error("❌ Delete failed")
+                            st.error("Delete failed")
                     except Exception as e:
                         st.error(f"Error: {e}")
                 else:

@@ -4,13 +4,13 @@
 REMOTE_HOST="dockerserver"
 REMOTE_DIR="flowium"
 
-echo "🔧 Setup Environment Variables on Remote"
+echo "Setup Environment Variables on Remote"
 echo "========================================="
 echo ""
 
 # Check if .env already exists
 if ssh ${REMOTE_HOST} "[ -f ${REMOTE_DIR}/.env ]"; then
-    echo "⚠️  .env file already exists on remote server"
+    echo "WARNING: .env file already exists on remote server"
     read -p "Do you want to overwrite it? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -49,7 +49,7 @@ WEATHER_API_KEY=${WEATHER_API_KEY}
 echo "${ENV_CONTENT}" | ssh ${REMOTE_HOST} "cat > ${REMOTE_DIR}/.env"
 
 echo ""
-echo "✅ Environment variables configured on remote server"
+echo "Environment variables configured on remote server"
 echo ""
 echo "You can edit them anytime with:"
 echo "  ssh ${REMOTE_HOST} 'cd ${REMOTE_DIR} && nano .env'"

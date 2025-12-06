@@ -527,3 +527,76 @@ def export_detections_csv(hours: int = 24, limit: int = 10000):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=flowium_detections_{hours}h.csv"}
     )
+
+@app.get("/training/hourly-with-weather")
+def get_hourly_stats_with_weather(hours: int = 168):
+    """Get hourly traffic counts with associated weather data for ML training"""
+    from sqlalchemy import func
+    from datetime import timedelta
+
+    db = SessionLocal()
+    start_time = datetime.utcnow() - timedelta(hours=hours)
+
+    # Get hourly detection counts
+    hourly_detections = db.query(
+        func.strftime('%Y-%m-%d %H:00:00', Detection.timestamp).label('hour'),
+        func.count(Detection.id).label('count')
+    ).filter(Detection.timestamp >= start_time)\
+     .group_by('hour')\
+     .order_by('hour')\
+     .all()
+
+    # Get all weather records in the time range
+    weather_records = db.query(WeatherData)\
+        .filter(WeatherData.timestamp >= start_time)\
+        .order_by(WeatherData.timestamp)\
+        .all()
+
+    db.close()
+
+    # Create a mapping of hours to weather data
+    weather_by_hour = {}
+    for weather in weather_records:
+        hour_key = weather.timestamp.strftime('%Y-%m-%d %H:00:00')
+        if hour_key not in weather_by_hour:
+            weather_by_hour[hour_key] = {
+                'temperature': weather.temperature,
+                'humidity': weather.humidity,
+                'precipitation': weather.precipitation,
+                'wind_speed': weather.wind_speed,
+                'weather_condition': weather.weather_condition
+            }
+
+    # Combine detection counts with weather data
+    training_data = []
+    for det in hourly_detections:
+        hour_str = det.hour
+        hour_dt = datetime.strptime(hour_str, '%Y-%m-%d %H:00:00')
+
+        # Get weather for this hour (or closest available)
+        weather = weather_by_hour.get(hour_str, {
+            'temperature': 20.0,
+            'humidity': 50.0,
+            'precipitation': 0.0,
+            'wind_speed': 0.0,
+            'weather_condition': 'unknown'
+        })
+
+        training_data.append({
+            'timestamp': hour_str,
+            'hour': hour_dt.hour,
+            'day_of_week': hour_dt.weekday(),
+            'day_name': hour_dt.strftime('%A'),
+            'vehicle_count': det.count,
+            'temperature': weather['temperature'],
+            'humidity': weather['humidity'],
+            'precipitation': weather['precipitation'],
+            'wind_speed': weather.get('wind_speed', 0.0),
+            'weather_condition': weather.get('weather_condition', 'unknown')
+        })
+
+    return {
+        "timeframe_hours": hours,
+        "total_records": len(training_data),
+        "data": training_data
+    }
