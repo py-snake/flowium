@@ -129,8 +129,6 @@ docker-compose logs -f
 
 Nyisd meg a böngészőben: `http://localhost:8501`
 
-![Feldolgozási folyamat](documentation/image/kep_4.png)
-
 ## Konfigurációs Paraméterek
 
 ### Stream Capture
