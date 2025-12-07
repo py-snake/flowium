@@ -9,7 +9,6 @@ import subprocess
 import threading
 from pathlib import Path
 
-# Configuration from environment variables
 YOUTUBE_URL = os.getenv('YOUTUBE_URL', '')
 FRAME_RATE = int(os.getenv('FRAME_RATE', '5'))
 OUTPUT_DIR = Path(os.getenv('OUTPUT_DIR', '/shared/frames'))
@@ -17,34 +16,21 @@ PROXY_URL = os.getenv('PROXY_URL', '')
 COOKIES_FILE = os.getenv('COOKIES_FILE', '')
 
 def log_stderr(process):
-    """Read and log stderr in background to prevent pipe blocking"""
+    """Read and log stderr in background"""
     try:
-        # iterate lines until the pipe closes
         for line in process.stderr:
             line = line.strip()
-            if line and not line.startswith('frame='):  # Skip verbose frame info
+            if line and not line.startswith('frame='):
                 print(f"ffmpeg: {line}")
     except ValueError:
-        # Occurs if operation is performed on closed file
         pass
     except Exception as e:
         print(f"Error logging stderr: {e}")
 
 def atomic_file_watcher(temp_path, final_path, stop_event):
-    """
-    Watch temp file and atomically rename to final path when stable.
-
-    NOTE: We do NOT use shutil.copy here. Copying is slow and non-atomic.
-    If ffmpeg writes to the file while we are copying, we get a corrupted image.
-    Instead, we wait for stability, then RENAME the file.
-    FFmpeg (with -update 1) closes the file handle after every frame,
-    so renaming the file out from under it is safe on Linux/Unix;
-    FFmpeg will simply create a new file for the next frame.
-    """
+    """Watch temp file and atomically rename when stable"""
     last_mtime = 0
     last_stable_time = 0
-    # Stability threshold must be less than frame interval (1/5fps = 0.2s)
-    # but long enough to ensure write is done.
     stability_threshold = 0.10
 
     print(f"Starting atomic file watcher: {temp_path.name} -> {final_path.name}")
@@ -64,27 +50,21 @@ def atomic_file_watcher(temp_path, final_path, stop_event):
                         continue
 
                     if current_mtime != last_mtime:
-                        # File was modified, reset stability timer
                         last_mtime = current_mtime
                         last_stable_time = current_time
                     elif current_time - last_stable_time >= stability_threshold:
-                        # File is stable. Atomically rename it directly.
-                        # This moves the inode; it is instant and atomic.
                         try:
                             temp_path.rename(final_path)
-                            # Reset times so we don't try to rename non-existent file immediately
                             last_mtime = 0
                         except FileNotFoundError:
-                            # FFMPEG might have just started writing a new one, or we just moved it.
                             pass
                         except OSError as e:
                             print(f"Rename failed: {e}")
 
                 except FileNotFoundError:
-                    # File disappeared (we likely just renamed it), wait for next frame
                     pass
 
-            time.sleep(0.05) # Check every 50ms
+            time.sleep(0.05)
         except Exception as e:
             print(f"Watcher error: {e}")
             time.sleep(1)
@@ -92,9 +72,8 @@ def atomic_file_watcher(temp_path, final_path, stop_event):
     print(f"Atomic file watcher stopped")
 
 def get_fresh_stream_url():
-    """Get a fresh stream URL from yt-dlp"""
+    """Get fresh stream URL from yt-dlp"""
     try:
-        # Build yt-dlp command with optional proxy and cookies
         cmd = ['yt-dlp', '-f', 'best', '-g']
         if PROXY_URL:
             cmd.extend(['--proxy', PROXY_URL])
@@ -128,7 +107,6 @@ def capture_stream():
         print("ERROR: YOUTUBE_URL environment variable not set")
         return
 
-    # Create output directory
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"Starting stream capture from: {YOUTUBE_URL}")
@@ -140,15 +118,12 @@ def capture_stream():
         else:
             print(f"Cookies file specified but not found: {COOKIES_FILE}")
 
-    # Use temp file for writing, watcher will atomically rename to latest.jpg
     temp_path = OUTPUT_DIR / 'latest_writing.jpg'
     latest_path = OUTPUT_DIR / 'latest.jpg'
 
-    # Configuration
-    STALE_THRESHOLD = 30  # Restart if frame is older than 30 seconds
-    MAX_RUN_TIME = 1800   # Restart every 30 minutes to refresh URL
+    STALE_THRESHOLD = 30
+    MAX_RUN_TIME = 1800
 
-    # Start atomic file watcher ONCE per function call
     stop_watcher = threading.Event()
     watcher_thread = threading.Thread(
         target=atomic_file_watcher,
@@ -159,7 +134,6 @@ def capture_stream():
 
     try:
         while True:
-            # Get fresh stream URL
             stream_url = get_fresh_stream_url()
             if not stream_url:
                 print("Retrying in 10 seconds...")
@@ -168,9 +142,9 @@ def capture_stream():
 
             ffmpeg_cmd = [
                 'ffmpeg',
-                '-re',                  # Read input at native frame rate
+                '-re',
                 '-i', stream_url,
-                '-q:v', '2',            # High quality JPEG
+                '-q:v', '2',
                 '-vf', f'fps={FRAME_RATE}',
                 '-f', 'image2',
                 '-update', '1',
@@ -193,8 +167,6 @@ def capture_stream():
                     text=True
                 )
 
-                # Start background thread to read stderr
-                # We do not join this thread; it dies when process pipe closes
                 stderr_thread = threading.Thread(target=log_stderr, args=(process,), daemon=True)
                 stderr_thread.start()
 
@@ -203,32 +175,28 @@ def capture_stream():
                 last_good_frame = None
 
                 while True:
-                    # Check if process died
                     if process.poll() is not None:
                         print(f"ffmpeg died with exit code {process.returncode}")
                         break
 
                     current_time = time.time()
 
-                    # Check health every 5 seconds
                     if current_time - last_check >= 5:
                         if latest_path.exists():
                             file_age = current_time - latest_path.stat().st_mtime
 
                             if file_age <= 5:
-                                # Fresh frames
                                 if last_good_frame is None or current_time - last_good_frame > 30:
                                     print(f"Stream healthy (frame age: {file_age:.1f}s)")
                                 last_good_frame = current_time
                             elif file_age > STALE_THRESHOLD:
                                 print(f"Frame is STALE ({file_age:.1f}s old) - restarting ffmpeg...")
-                                break # Break inner loop to restart ffmpeg
+                                break
                         else:
                             print("Waiting for first frame...")
 
                         last_check = current_time
 
-                    # Automatic restart
                     if current_time - start_time > MAX_RUN_TIME:
                         print(f"Auto-restart after {MAX_RUN_TIME}s...")
                         break
@@ -236,7 +204,6 @@ def capture_stream():
                     time.sleep(1)
 
             finally:
-                # Ensure process is killed on break or exception
                 if process and process.poll() is None:
                     print("Terminating ffmpeg process...")
                     process.terminate()
@@ -246,13 +213,10 @@ def capture_stream():
                         process.kill()
                         process.wait()
 
-            # Wait a bit before inner loop restart (getting new URL)
             print("Waiting 3 seconds before restart...")
             time.sleep(3)
 
     finally:
-        # CRITICAL: Stop the watcher thread if this function exits (e.g. via KeyboardInterrupt or crash)
-        # Prevents thread leaks if the main block restarts this function.
         print("Stopping file watcher...")
         stop_watcher.set()
         watcher_thread.join(timeout=2)

@@ -22,51 +22,39 @@ st.set_page_config(
     layout="wide"
 )
 
-# Title
 st.title("Flowium - Live Stream Test")
 
-# Tabs
 tab1, tab2, tab3, tab4 = st.tabs(["Live Stream", "Crop Configuration", "Analytics", "Predictions"])
 
-# ============================================================================
-# TAB 1: Live Stream View
-# ============================================================================
 with tab1:
     st.markdown("Testing YouTube stream capture with yt-dlp")
 
-    # Sidebar
     st.sidebar.header("Stream Controls")
 
-    # Auto-refresh toggle
     auto_refresh = st.sidebar.checkbox("Auto-refresh", value=True)
     refresh_fps = st.sidebar.slider("Refresh rate (FPS)", 1, 10, 5, help="Updates per second (higher = smoother but more CPU)")
 
     st.sidebar.markdown("---")
 
-    # Manual refresh button
     if st.sidebar.button("Refresh Now"):
         st.rerun()
 
     st.sidebar.markdown("---")
 
-    # Background Subtraction Control
     st.sidebar.header("Background Subtraction")
 
     try:
-        # Get current status
         status_response = requests.get(f"{PREPROCESSING_URL}/background-subtraction/status", timeout=2)
         if status_response.ok:
             status_data = status_response.json()
             current_status = status_data.get('enabled', False)
 
-            # Toggle button
             bg_subtraction = st.sidebar.checkbox(
                 "Enable Background Subtraction",
                 value=current_status,
                 help="Removes static obstacles (trees, poles) to isolate moving vehicles. Adapts to day/night changes."
             )
 
-            # Update status if changed
             if bg_subtraction != current_status:
                 if bg_subtraction:
                     enable_response = requests.post(f"{PREPROCESSING_URL}/background-subtraction/enable", timeout=2)
@@ -77,7 +65,6 @@ with tab1:
                     if disable_response.ok:
                         st.sidebar.info("Background subtraction disabled")
 
-            # Reset button (only show if enabled)
             if bg_subtraction:
                 if st.sidebar.button("Reset Background Model", help="Re-learn the background (useful after scene changes)"):
                     reset_response = requests.post(f"{PREPROCESSING_URL}/background-subtraction/reset", timeout=2)
@@ -91,11 +78,9 @@ with tab1:
 
     st.sidebar.markdown("---")
 
-    # Performance Metrics
     st.sidebar.header("Performance")
 
     try:
-        # Get performance data from all services
         preprocess_perf = requests.get(f"{PREPROCESSING_URL}/performance", timeout=2)
         yolo_perf = requests.get(f"{YOLO_DETECTOR_URL}/performance", timeout=2)
 
@@ -103,7 +88,6 @@ with tab1:
             prep_data = preprocess_perf.json()
             yolo_data = yolo_perf.json()
 
-            # Calculate overall time (preprocessing + detection)
             overall_time = prep_data.get('last_processing_time_ms', 0) + yolo_data.get('last_detection_time_ms', 0)
 
             st.sidebar.metric(
@@ -124,7 +108,6 @@ with tab1:
                 delta=f"{1000/overall_time:.1f} FPS" if overall_time > 0 else "N/A"
             )
 
-            # Show frame drop rate (adaptive FPS indicator)
             drop_rate = yolo_data.get('drop_rate', 0)
             if drop_rate > 0:
                 st.sidebar.metric(
@@ -143,49 +126,40 @@ with tab1:
 
     st.sidebar.markdown("---")
 
-    # Main content - 3 columns for Raw, Preprocessed, and Detected views
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.subheader("Raw Stream Capture")
 
-        # Check if service is available
         try:
             health_response = requests.get(f"{PREPROCESSING_URL}/health", timeout=2)
             if health_response.ok:
                 health_data = health_response.json()
 
                 if health_data.get('latest_frame_exists'):
-                    # Initialize session state for last good image
                     if 'last_raw_image' not in st.session_state:
                         st.session_state.last_raw_image = None
                         st.session_state.last_raw_time = None
 
-                    # Try to load and display the image with robust error handling
                     try:
-                        # Add timestamp to prevent caching
-                        cache_buster = int(time.time() * 1000)  # Use milliseconds for high FPS
+                        cache_buster = int(time.time() * 1000)
                         img_response = requests.get(
                             f"{PREPROCESSING_URL}/image/latest?t={cache_buster}",
                             timeout=2,
                             headers={'Cache-Control': 'no-cache'}
                         )
-                        if img_response.ok and len(img_response.content) > 1000:  # Ensure we have a complete image
+                        if img_response.ok and len(img_response.content) > 1000:
                             try:
                                 image = Image.open(BytesIO(img_response.content))
-                                # Verify image is valid
                                 image.verify()
-                                # Reopen for display (verify() closes the file)
                                 image = Image.open(BytesIO(img_response.content))
 
-                                # Store as last good image
                                 st.session_state.last_raw_image = img_response.content
                                 st.session_state.last_raw_time = time.strftime('%H:%M:%S')
 
                                 st.image(image, caption=f"Raw - {st.session_state.last_raw_time}", use_container_width=True)
                                 st.info(f"Full Resolution: {image.size[0]} x {image.size[1]}")
                             except (IOError, OSError) as e:
-                                # Corrupted JPEG or incomplete read - use last good image
                                 if st.session_state.last_raw_image:
                                     image = Image.open(BytesIO(st.session_state.last_raw_image))
                                     st.image(image, caption=f"Raw - {st.session_state.last_raw_time} (cached)", use_container_width=True)
@@ -193,14 +167,12 @@ with tab1:
                                 else:
                                     st.error(f"Image corrupted, no cache available")
                         else:
-                            # Show last good image if available
                             if st.session_state.last_raw_image:
                                 image = Image.open(BytesIO(st.session_state.last_raw_image))
                                 st.image(image, caption=f"Raw - {st.session_state.last_raw_time} (cached)", use_container_width=True)
                             else:
                                 st.error("Could not load image")
                     except Exception as e:
-                        # Show last good image on any error
                         if st.session_state.last_raw_image:
                             try:
                                 image = Image.open(BytesIO(st.session_state.last_raw_image))
@@ -221,35 +193,28 @@ with tab1:
     with col2:
         st.subheader("Preprocessed View")
 
-        # Initialize session state for last good processed image
         if 'last_processed_image' not in st.session_state:
             st.session_state.last_processed_image = None
             st.session_state.last_processed_time = None
 
-        # Try to load processed image with robust error handling
         try:
-            # Add timestamp to prevent caching
-            cache_buster = int(time.time() * 1000)  # Use milliseconds for high FPS
+            cache_buster = int(time.time() * 1000)
             img_response = requests.get(
                 f"{PREPROCESSING_URL}/image/processed?t={cache_buster}",
                 timeout=2,
                 headers={'Cache-Control': 'no-cache'}
             )
-            if img_response.ok and len(img_response.content) > 1000:  # Ensure we have a complete image
+            if img_response.ok and len(img_response.content) > 1000:
                 try:
                     image = Image.open(BytesIO(img_response.content))
-                    # Verify image is valid
                     image.verify()
-                    # Reopen for display
                     image = Image.open(BytesIO(img_response.content))
 
-                    # Store as last good image
                     st.session_state.last_processed_image = img_response.content
                     st.session_state.last_processed_time = time.strftime('%H:%M:%S')
 
                     st.image(image, caption=f"Processed - {st.session_state.last_processed_time}", use_container_width=True)
 
-                    # Show crop info
                     try:
                         preview_response = requests.get(f"{PREPROCESSING_URL}/preview", timeout=2)
                         if preview_response.ok:
@@ -259,7 +224,6 @@ with tab1:
                     except:
                         pass
                 except (IOError, OSError) as e:
-                    # Corrupted JPEG - use last good image
                     if st.session_state.last_processed_image:
                         image = Image.open(BytesIO(st.session_state.last_processed_image))
                         st.image(image, caption=f"Processed - {st.session_state.last_processed_time} (cached)", use_container_width=True)
@@ -267,7 +231,6 @@ with tab1:
                     else:
                         st.warning("Waiting for automatic preprocessing...")
             else:
-                # Show last good image if available
                 if st.session_state.last_processed_image:
                     image = Image.open(BytesIO(st.session_state.last_processed_image))
                     st.image(image, caption=f"Processed - {st.session_state.last_processed_time} (cached)", use_container_width=True)
@@ -275,7 +238,6 @@ with tab1:
                     st.warning("Waiting for automatic preprocessing...")
                     st.info("Frames are processed automatically")
         except Exception as e:
-            # Show last good image on any error
             if st.session_state.last_processed_image:
                 try:
                     image = Image.open(BytesIO(st.session_state.last_processed_image))
@@ -288,35 +250,28 @@ with tab1:
     with col3:
         st.subheader("Vehicle Detection")
 
-        # Initialize session state for last good detected image
         if 'last_detected_image' not in st.session_state:
             st.session_state.last_detected_image = None
             st.session_state.last_detected_time = None
 
-        # Try to load detected image with robust error handling
         try:
-            # Add timestamp to prevent caching
-            cache_buster = int(time.time() * 1000)  # Use milliseconds for high FPS
+            cache_buster = int(time.time() * 1000)
             img_response = requests.get(
                 f"{YOLO_DETECTOR_URL}/image/detected?t={cache_buster}",
                 timeout=2,
                 headers={'Cache-Control': 'no-cache'}
             )
-            if img_response.ok and len(img_response.content) > 1000:  # Ensure we have a complete image
+            if img_response.ok and len(img_response.content) > 1000:
                 try:
                     image = Image.open(BytesIO(img_response.content))
-                    # Verify image is valid
                     image.verify()
-                    # Reopen for display
                     image = Image.open(BytesIO(img_response.content))
 
-                    # Store as last good image
                     st.session_state.last_detected_image = img_response.content
                     st.session_state.last_detected_time = time.strftime('%H:%M:%S')
 
                     st.image(image, caption=f"Detected - {st.session_state.last_detected_time}", use_container_width=True)
 
-                    # Show detection statistics
                     try:
                         stats_response = requests.get(f"{YOLO_DETECTOR_URL}/stats", timeout=2)
                         if stats_response.ok:
@@ -325,17 +280,14 @@ with tab1:
                                 vehicle_count = stats.get('vehicle_count', 0)
                                 vehicle_types = stats.get('vehicle_types', {})
 
-                                # Display stats
                                 st.info(f"Total Vehicles: {vehicle_count}")
 
-                                # Display breakdown by vehicle type
                                 if vehicle_types:
                                     type_text = " | ".join([f"{vtype}: {count}" for vtype, count in vehicle_types.items()])
                                     st.caption(f"{type_text}")
                     except:
                         pass
                 except (IOError, OSError) as e:
-                    # Corrupted JPEG - use last good image
                     if st.session_state.last_detected_image:
                         image = Image.open(BytesIO(st.session_state.last_detected_image))
                         st.image(image, caption=f"Detected - {st.session_state.last_detected_time} (cached)", use_container_width=True)
@@ -343,7 +295,6 @@ with tab1:
                     else:
                         st.warning("Waiting for vehicle detection...")
             else:
-                # Show last good image if available
                 if st.session_state.last_detected_image:
                     image = Image.open(BytesIO(st.session_state.last_detected_image))
                     st.image(image, caption=f"Detected - {st.session_state.last_detected_time} (cached)", use_container_width=True)
@@ -351,7 +302,6 @@ with tab1:
                     st.warning("Waiting for vehicle detection...")
                     st.info("Detection runs automatically at processing FPS")
         except Exception as e:
-            # Show last good image on any error
             if st.session_state.last_detected_image:
                 try:
                     image = Image.open(BytesIO(st.session_state.last_detected_image))
@@ -361,7 +311,6 @@ with tab1:
             else:
                 st.warning("Waiting for vehicle detection...")
 
-    # Status section
     st.markdown("---")
     st.subheader("System Status")
 
@@ -378,7 +327,6 @@ with tab1:
             st.error("Preprocessing Service")
 
     with col2:
-        # Check if frames are available
         try:
             health_response = requests.get(f"{PREPROCESSING_URL}/health", timeout=2)
             if health_response.ok:
@@ -393,7 +341,6 @@ with tab1:
             st.warning("No Frames Yet")
 
     with col3:
-        # Check YOLO detector service
         try:
             health_response = requests.get(f"{YOLO_DETECTOR_URL}/health", timeout=2)
             if health_response.ok:
@@ -403,7 +350,6 @@ with tab1:
         except:
             st.error("YOLO Detector")
 
-    # Recent Detections section
     st.markdown("---")
     st.subheader("Recent Detections (Last 10)")
 
@@ -414,15 +360,12 @@ with tab1:
             detections = detections_data.get('detections', [])
 
             if detections:
-                # Create a dataframe for display
                 import pandas as pd
                 from datetime import datetime as dt
 
-                # Format data for display
                 display_data = []
                 for detection in detections:
                     timestamp = detection.get('timestamp', '')
-                    # Convert ISO timestamp to readable format
                     try:
                         ts = dt.fromisoformat(timestamp)
                         time_str = ts.strftime('%H:%M:%S')
@@ -448,14 +391,10 @@ with tab1:
     except Exception as e:
         st.error(f"Error loading detections: {e}")
 
-# ============================================================================
-# TAB 2: Crop Configuration Tool
-# ============================================================================
 with tab2:
     st.markdown("### Interactive Crop Region Selector")
     st.markdown("Adjust the sliders below to select the area where vehicles pass. The red rectangle shows the selected region.")
 
-    # Get the latest frame
     try:
         cache_buster = int(time.time())
         img_response = requests.get(
@@ -470,16 +409,13 @@ with tab2:
 
             st.info(f"Full Image Size: {img_width} x {img_height}")
 
-            # Initialize session state for crop values from preprocessing service
             if 'crop_x' not in st.session_state:
-                # Read default values from environment variables (current config)
                 default_x = int(os.getenv('CROP_X', 560))
                 default_y = int(os.getenv('CROP_Y', 340))
                 default_width = int(os.getenv('CROP_WIDTH', 800))
                 default_height = int(os.getenv('CROP_HEIGHT', 400))
 
                 try:
-                    # Get current crop settings from preprocessing service
                     preview_response = requests.get(f"{PREPROCESSING_URL}/preview", timeout=2)
                     if preview_response.ok:
                         preview_data = preview_response.json()
@@ -489,19 +425,16 @@ with tab2:
                         st.session_state.crop_width = crop.get('width', default_width)
                         st.session_state.crop_height = crop.get('height', default_height)
                     else:
-                        # Fallback to env defaults if service not available
                         st.session_state.crop_x = default_x
                         st.session_state.crop_y = default_y
                         st.session_state.crop_width = default_width
                         st.session_state.crop_height = default_height
                 except:
-                    # Fallback to env defaults on error
                     st.session_state.crop_x = default_x
                     st.session_state.crop_y = default_y
                     st.session_state.crop_width = default_width
                     st.session_state.crop_height = default_height
 
-            # Crop controls in columns
             col1, col2 = st.columns(2)
 
             with col1:
@@ -516,39 +449,32 @@ with tab2:
                 crop_width = st.slider("Width", 100, max_width, min(st.session_state.crop_width, max_width), key='slider_width')
                 crop_height = st.slider("Height", 100, max_height, min(st.session_state.crop_height, max_height), key='slider_height')
 
-            # Update session state
             st.session_state.crop_x = crop_x
             st.session_state.crop_y = crop_y
             st.session_state.crop_width = crop_width
             st.session_state.crop_height = crop_height
 
-            # Draw rectangle on image
             preview_image = original_image.copy()
             draw = ImageDraw.Draw(preview_image)
 
-            # Draw red rectangle
             draw.rectangle(
                 [crop_x, crop_y, crop_x + crop_width, crop_y + crop_height],
                 outline='red',
                 width=3
             )
 
-            # Show preview
             st.markdown("---")
             st.markdown("#### Preview with Selected Crop Region (Red Rectangle)")
             st.image(preview_image, use_container_width=True)
 
-            # Show cropped region
             cropped_preview = original_image.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
             st.markdown("#### Cropped Region Preview")
             st.image(cropped_preview, use_container_width=True)
 
-            # Configuration output
             st.markdown("---")
             st.markdown("### Configuration for .env file")
             st.markdown("Click the copy button in the top-right corner of each code block:")
 
-            # .env format with copy button
             config_text = f"""# Preprocessing crop region
 CROP_X={crop_x}
 CROP_Y={crop_y}
@@ -573,23 +499,16 @@ CROP_HEIGHT={crop_height}"""
         st.error(f"Error: {e}")
         st.info("Make sure the preprocessing service is running and frames are being captured.")
 
-# ============================================================================
-# TAB 3: Professional Analytics Dashboard
-# ============================================================================
 with tab3:
     should_rerun = render_analytics_tab(DATA_MANAGER_URL)
     if should_rerun:
         st.rerun()
 
-# ============================================================================
-# TAB 4: Traffic Predictions & Machine Learning
-# ============================================================================
 with tab4:
     st.header("Traffic Predictions & Machine Learning")
 
     ONLINE_LEARNER_URL = os.getenv('ONLINE_LEARNER_URL', 'http://online-learner:8000')
 
-    # Check if online learner is available
     try:
         health_response = requests.get(f"{ONLINE_LEARNER_URL}/health", timeout=2)
         if not health_response.ok:
@@ -597,7 +516,6 @@ with tab4:
         else:
             health_data = health_response.json()
 
-            # Model Performance Metrics
             st.subheader("Model Performance")
 
             col1, col2, col3, col4 = st.columns(4)
@@ -628,7 +546,6 @@ with tab4:
 
             st.markdown("---")
 
-            # Traffic Predictions for Next 24 Hours
             st.subheader("Traffic Forecast - Next 24 Hours")
 
             try:
@@ -642,10 +559,8 @@ with tab4:
                         import plotly.express as px
                         import plotly.graph_objects as go
 
-                        # Create chart data
                         chart_data = pd.DataFrame(predictions)
 
-                        # Line chart for predictions
                         fig = px.line(
                             chart_data,
                             x='time',
@@ -663,7 +578,6 @@ with tab4:
 
                         st.plotly_chart(fig, use_container_width=True)
 
-                        # Show predictions table
                         with st.expander("View Detailed Predictions"):
                             display_predictions = chart_data[['time', 'day_name', 'predicted_vehicles', 'temperature']].copy()
                             display_predictions['predicted_vehicles'] = display_predictions['predicted_vehicles'].round(1)
@@ -679,13 +593,11 @@ with tab4:
 
             st.markdown("---")
 
-            # Training History
             st.subheader("Training History & Model Performance")
 
             col1, col2 = st.columns(2)
 
             with col1:
-                # Recent training history
                 st.markdown("**Recent Training Samples**")
                 try:
                     history_response = requests.get(f"{ONLINE_LEARNER_URL}/training/history", timeout=5)
@@ -697,11 +609,9 @@ with tab4:
                             import pandas as pd
                             import plotly.graph_objects as go
 
-                            # Show last 20 training samples
                             history_df = pd.DataFrame(history[-20:])
 
                             if 'predicted' in history_df.columns and 'actual' in history_df.columns:
-                                # Chart showing predicted vs actual
                                 fig = go.Figure()
 
                                 fig.add_trace(go.Scatter(
@@ -734,7 +644,6 @@ with tab4:
                     st.error(f"Error loading training history: {e}")
 
             with col2:
-                # Performance stats
                 st.markdown("**Model Performance Statistics**")
                 try:
                     perf_response = requests.get(f"{ONLINE_LEARNER_URL}/stats/performance", timeout=5)
@@ -753,7 +662,6 @@ with tab4:
                             else:
                                 st.info("Model is still learning... collecting more data")
 
-                            # Show error distribution
                             try:
                                 history_response = requests.get(f"{ONLINE_LEARNER_URL}/training/history", timeout=5)
                                 if history_response.ok:
@@ -782,7 +690,6 @@ with tab4:
 
             st.markdown("---")
 
-            # Manual Training Control
             st.subheader("Manual Training")
 
             col1, col2 = st.columns(2)
@@ -816,7 +723,6 @@ with tab4:
     except Exception as e:
         st.error(f"Error connecting to Online Learner service: {e}")
 
-# Auto-refresh logic (only for Live Stream tab)
 if auto_refresh:
     time.sleep(1.0 / refresh_fps)
     st.rerun()

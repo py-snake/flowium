@@ -1,36 +1,29 @@
 """
 Weather Service
 Fetches weather data from Open-Meteo API (free, no API key required) and stores in Data Manager.
-Uses httpx for true asynchronous network requests to prevent blocking the FastAPI event loop.
 """
 import os
 import asyncio
 import logging
 from datetime import datetime
 
-import httpx # Changed from 'requests' to 'httpx' for async support
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Weather Service")
 
-# Configuration
 LOCATION = os.getenv('LOCATION', 'Baja,HU')
 DATA_MANAGER_URL = os.getenv('DATA_MANAGER_URL', 'http://data-manager:8000')
-FETCH_INTERVAL = int(os.getenv('WEATHER_FETCH_INTERVAL', '600'))  # Default: 10 minutes
+FETCH_INTERVAL = int(os.getenv('WEATHER_FETCH_INTERVAL', '600'))
 
-# Location coordinates (Baja, Hungary)
 LATITUDE = float(os.getenv('LATITUDE', '46.18'))
 LONGITUDE = float(os.getenv('LONGITUDE', '18.95'))
 
-# Global HTTP client for background tasks (better performance than creating a new client every time)
-http_client = None 
-
-# WMO Weather interpretation codes
+http_client = None
 WEATHER_CODES = {
     0: "Clear sky",
     1: "Mainly clear",
@@ -66,9 +59,7 @@ class WeatherData(BaseModel):
     wind_speed: float
 
 async def fetch_weather() -> WeatherData:
-    """Fetch current weather from Open-Meteo API (free, no API key required)"""
-    # NOTE: httpx is used here, making this function truly asynchronous
-
+    """Fetch current weather from Open-Meteo API"""
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         'latitude': LATITUDE,
@@ -78,18 +69,14 @@ async def fetch_weather() -> WeatherData:
     }
 
     try:
-        # Use the global asynchronous client
         response = await http_client.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
 
         current = data['current']
-
-        # Decode weather code
         weather_code = current['weather_code']
         weather_condition = WEATHER_CODES.get(weather_code, f"Unknown ({weather_code})")
 
-        # Extract weather data
         weather = WeatherData(
             temperature=current['temperature_2m'],
             humidity=current['relative_humidity_2m'],
@@ -102,15 +89,14 @@ async def fetch_weather() -> WeatherData:
 
     except httpx.RequestError as e:
         logger.error(f"Failed to fetch weather: {e}")
-        # Re-raise as HTTPException for API endpoints
         raise HTTPException(status_code=500, detail=f"Failed to fetch weather: {e}")
 
 async def send_to_data_manager(weather: WeatherData) -> bool:
-    """Send weather data to Data Manager asynchronously"""
+    """Send weather data to Data Manager"""
     try:
         response = await http_client.post(
             f"{DATA_MANAGER_URL}/weather",
-            json=weather.model_dump(), # Use model_dump for Pydantic v2 compatibility
+            json=weather.model_dump(),
             timeout=5
         )
         response.raise_for_status()
@@ -140,9 +126,7 @@ def health():
 
 @app.get("/weather/current")
 async def get_current_weather():
-    """Get current weather asynchronously"""
-
-    # This now awaits the asynchronous fetch_weather, keeping the endpoint non-blocking
+    """Get current weather"""
     weather = await fetch_weather()
 
     return {
@@ -154,8 +138,7 @@ async def get_current_weather():
 
 @app.post("/weather/fetch-and-store")
 async def fetch_and_store():
-    """Fetch weather and store in database asynchronously"""
-
+    """Fetch weather and store in database"""
     weather = await fetch_weather()
     success = await send_to_data_manager(weather)
 
@@ -168,13 +151,11 @@ async def fetch_and_store():
     }
 
 async def auto_weather_task():
-    """Background task that automatically fetches weather at specified interval (fully async)"""
-
+    """Fetch weather automatically at configured interval"""
     logger.info(f"Starting automatic weather fetch task (interval: {FETCH_INTERVAL}s)...")
 
     while True:
         try:
-            # These are now non-blocking async calls
             weather = await fetch_weather()
             success = await send_to_data_manager(weather)
 
@@ -187,22 +168,19 @@ async def auto_weather_task():
                 logger.error("Failed to store weather data")
 
         except Exception as e:
-            # We catch the exception here because it's a background task
             logger.error(f"Error in auto-weather task: {e}")
 
-        # Sleep for the configured interval
         await asyncio.sleep(FETCH_INTERVAL)
 
 @app.on_event("startup")
 async def startup_event():
-    """Start background tasks and initialize HTTP client on startup"""
+    """Start background tasks"""
     global http_client
-    # Initialize the httpx client once on startup
     http_client = httpx.AsyncClient()
     asyncio.create_task(auto_weather_task())
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Close HTTP client on shutdown"""
+    """Close HTTP client"""
     if http_client:
         await http_client.close()

@@ -23,11 +23,9 @@ st.set_page_config(
     layout="wide"
 )
 
-# Title
 st.title("Flowium Traffic Monitoring System")
 st.markdown("Real-time vehicle detection and traffic prediction using YOLOv8")
 
-# Sidebar
 st.sidebar.header("System Status")
 
 def check_service_health(name, url):
@@ -38,7 +36,6 @@ def check_service_health(name, url):
     except:
         return False
 
-# Check all services
 services = {
     "Data Manager": DATA_MANAGER_URL,
     "YOLO Detector": YOLO_DETECTOR_URL,
@@ -52,7 +49,6 @@ for name, url in services.items():
 
 st.sidebar.markdown("---")
 
-# Main tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["Dashboard", "Live Detection", "Analytics", "Predictions", "Settings"])
 
 with tab1:
@@ -60,7 +56,6 @@ with tab1:
 
     col1, col2, col3 = st.columns(3)
 
-    # Fetch stats from data manager
     try:
         health_response = requests.get(f"{DATA_MANAGER_URL}/health", timeout=5)
         if health_response.ok:
@@ -73,7 +68,6 @@ with tab1:
                 st.metric("Weather Records", health_data.get('total_weather_records', 0))
 
             with col3:
-                # Get latest weather
                 weather_response = requests.get(f"{DATA_MANAGER_URL}/weather/latest", timeout=5)
                 if weather_response.ok:
                     weather = weather_response.json()
@@ -88,7 +82,6 @@ with tab1:
 
     st.markdown("---")
 
-    # Hourly traffic chart
     st.subheader("Hourly Traffic Statistics")
 
     try:
@@ -198,7 +191,6 @@ with tab3:
 with tab4:
     st.header("Traffic Predictions & Machine Learning")
 
-    # Check if online learner is available
     try:
         health_response = requests.get(f"{ONLINE_LEARNER_URL}/health", timeout=2)
         if not health_response.ok:
@@ -206,7 +198,6 @@ with tab4:
         else:
             health_data = health_response.json()
 
-            # Model Performance Metrics
             st.subheader("Model Performance")
 
             col1, col2, col3, col4 = st.columns(4)
@@ -223,7 +214,6 @@ with tab4:
                 st.metric("Model Status", "Ready" if model_trained else "Training")
 
             with col4:
-                # Get performance stats
                 try:
                     perf_response = requests.get(f"{ONLINE_LEARNER_URL}/stats/performance", timeout=5)
                     if perf_response.ok:
@@ -238,7 +228,6 @@ with tab4:
 
             st.markdown("---")
 
-            # Traffic Predictions for Next 24 Hours
             st.subheader("Traffic Forecast - Next 24 Hours")
 
             try:
@@ -248,10 +237,8 @@ with tab4:
                     predictions = predictions_data.get('predictions', [])
 
                     if predictions:
-                        # Create chart data
                         chart_data = pd.DataFrame(predictions)
 
-                        # Line chart for predictions
                         fig = px.line(
                             chart_data,
                             x='time',
@@ -269,7 +256,6 @@ with tab4:
 
                         st.plotly_chart(fig, use_container_width=True)
 
-                        # Show predictions table
                         with st.expander("View Detailed Predictions"):
                             display_predictions = chart_data[['time', 'day_name', 'predicted_vehicles', 'temperature']].copy()
                             display_predictions['predicted_vehicles'] = display_predictions['predicted_vehicles'].round(1)
@@ -285,13 +271,11 @@ with tab4:
 
             st.markdown("---")
 
-            # Training History
             st.subheader("Training History & Model Performance")
 
             col1, col2 = st.columns(2)
 
             with col1:
-                # Recent training history
                 st.markdown("**Recent Training Samples**")
                 try:
                     history_response = requests.get(f"{ONLINE_LEARNER_URL}/training/history", timeout=5)
@@ -300,11 +284,9 @@ with tab4:
                         history = history_data.get('history', [])
 
                         if history:
-                            # Show last 20 training samples
                             history_df = pd.DataFrame(history[-20:])
 
                             if 'predicted' in history_df.columns and 'actual' in history_df.columns:
-                                # Chart showing predicted vs actual
                                 fig = go.Figure()
 
                                 fig.add_trace(go.Scatter(
@@ -337,7 +319,6 @@ with tab4:
                     st.error(f"Error loading training history: {e}")
 
             with col2:
-                # Performance stats
                 st.markdown("**Model Performance Statistics**")
                 try:
                     perf_response = requests.get(f"{ONLINE_LEARNER_URL}/stats/performance", timeout=5)
@@ -356,7 +337,6 @@ with tab4:
                             else:
                                 st.info("Model is still learning... collecting more data")
 
-                            # Show error distribution
                             try:
                                 history_response = requests.get(f"{ONLINE_LEARNER_URL}/training/history", timeout=5)
                                 if history_response.ok:
@@ -384,7 +364,6 @@ with tab4:
 
             st.markdown("---")
 
-            # Manual Training Control
             st.subheader("Manual Training")
 
             col1, col2 = st.columns(2)
@@ -474,7 +453,6 @@ with tab5:
             except Exception as e:
                 st.error(f"Error: {e}")
 
-# Auto-refresh option
 st.sidebar.markdown("---")
 auto_refresh = st.sidebar.checkbox("Auto-refresh (30s)")
 

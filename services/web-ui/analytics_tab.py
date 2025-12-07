@@ -1,6 +1,5 @@
 """
-Professional Analytics Dashboard Tab
-Advanced statistics and data management for Flowium
+Advanced statistics and data management
 """
 import streamlit as st
 import requests
@@ -10,9 +9,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 def render_analytics_tab(DATA_MANAGER_URL):
-    """Render the professional analytics dashboard"""
-
-    st.markdown("## Professional Traffic Analytics Dashboard")
+    st.markdown("## Traffic Analytics Dashboard")
 
     # Sidebar controls
     st.sidebar.markdown("---")
@@ -45,9 +42,6 @@ def render_analytics_tab(DATA_MANAGER_URL):
         st.error(f"Cannot connect to Data Manager: {e}")
         return False
 
-    # ==========================================================================
-    # TOP KPI METRICS
-    # ==========================================================================
     st.markdown("### Key Performance Indicators")
 
     try:
@@ -104,9 +98,6 @@ def render_analytics_tab(DATA_MANAGER_URL):
 
     st.markdown("---")
 
-    # ==========================================================================
-    # WEATHER CONDITIONS
-    # ==========================================================================
     st.markdown("### Current Weather Conditions")
 
     try:
@@ -130,7 +121,6 @@ def render_analytics_tab(DATA_MANAGER_URL):
                     )
 
                 with col3:
-                    # Weather condition with emoji
                     condition = weather['weather_condition']
                     emoji = "☀️" if "clear" in condition.lower() else \
                             "⛅" if "partly" in condition.lower() else \
@@ -169,10 +159,7 @@ def render_analytics_tab(DATA_MANAGER_URL):
         st.warning(f"Could not load weather data: {e}")
 
     st.markdown("---")
-
-    # ==========================================================================
-    # TRAFFIC ANALYSIS
-    # ==========================================================================
+    
     col_left, col_right = st.columns([2, 1])
 
     with col_left:
@@ -188,7 +175,7 @@ def render_analytics_tab(DATA_MANAGER_URL):
                 df_timeline = pd.DataFrame(timeline['data'])
                 df_timeline['timestamp'] = pd.to_datetime(df_timeline['timestamp'])
 
-                # Create advanced line chart with area fill
+                # Create line chart with area fill
                 fig = go.Figure()
 
                 fig.add_trace(go.Scatter(
@@ -278,9 +265,6 @@ def render_analytics_tab(DATA_MANAGER_URL):
 
     st.markdown("---")
 
-    # ==========================================================================
-    # RECENT DETECTIONS (REALTIME)
-    # ==========================================================================
     st.markdown("### Recent Detections (Last 10)")
 
     try:
@@ -290,7 +274,6 @@ def render_analytics_tab(DATA_MANAGER_URL):
             detections = recent_data.get('detections', [])
 
             if detections:
-                # Format for clean table display
                 display_data = []
                 for det in detections:
                     timestamp = det.get('timestamp', '')
@@ -321,9 +304,6 @@ def render_analytics_tab(DATA_MANAGER_URL):
 
     st.markdown("---")
 
-    # ==========================================================================
-    # DATA MANAGEMENT & EXPORT
-    # ==========================================================================
     st.markdown("### Data Management & Export")
 
     col1, col2 = st.columns(2)
@@ -417,6 +397,6 @@ def render_analytics_tab(DATA_MANAGER_URL):
     if auto_refresh:
         import time
         time.sleep(5)
-        return True  # Signal to rerun
+        return True
 
-    return False  # No rerun needed
+    return False

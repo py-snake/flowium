@@ -1,6 +1,5 @@
 """
 Export YOLOv8n model to ONNX format for faster CPU inference
-Run this once to create the optimized ONNX model
 """
 from ultralytics import YOLO
 
@@ -10,9 +9,9 @@ model = YOLO('yolov8n.pt')
 print("Exporting to ONNX format (optimized for CPU)...")
 # Export with optimizations:
 # - format='onnx': ONNX format
-# - imgsz=416: Balanced size (good accuracy + speed)
+# - imgsz=416: Balanced size
 # - simplify=True: Simplify the ONNX graph
-# - opset=12: ONNX opset version (12 is widely compatible)
+# - opset=12: ONNX opset version
 # - dynamic=False: Fixed input size for better optimization
 model.export(
     format='onnx',

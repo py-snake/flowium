@@ -38,8 +38,8 @@ mae = metrics.MAE()
 
 # Training history and statistics
 total_samples_trained = 0
-training_history = deque(maxlen=100)  # Keep last 100 training samples
-prediction_history = deque(maxlen=50)  # Keep last 50 predictions
+training_history = deque(maxlen=100)
+prediction_history = deque(maxlen=50)
 
 # Load existing model if available
 if MODEL_PATH.exists():
@@ -143,7 +143,6 @@ def train(data: TrainingData):
         'mae': float(mae.get()) if hasattr(mae, 'get') else 0.0
     })
 
-    # Save model every 10 samples
     if total_samples_trained % 10 == 0:
         save_model()
 
